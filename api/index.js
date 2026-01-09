@@ -1,7 +1,15 @@
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '4mb', // Увеличиваем лимит для PDF файлов
+    },
+  },
+};
+
 export default async function handler(req, res) {
-  // CORS (доступы)
+  // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   if (req.method === 'OPTIONS') {
@@ -11,49 +19,27 @@ export default async function handler(req, res) {
 
   try {
     const { key } = req.query;
-    if (!key) return res.status(400).json({ error: "Нет ключа" });
+    if (!key) return res.status(400).json({ error: "No API Key" });
 
-    // --- ШАГ 1: АВТО-ПОИСК МОДЕЛИ ---
-    // Мы спрашиваем у Google список всех доступных моделей
-    const listResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
-    const listData = await listResponse.json();
+    // 1. Авто-выбор модели (Предпочитаем Pro для задач с файлами, Flash для скорости)
+    // Но для простоты берем 1.5 Flash, так как Pro часто падает с 404 без привязки карты.
+    // Если у вас есть доступ к Pro - поменяйте на 'gemini-1.5-pro'
+    let model = 'gemini-1.5-flash'; 
 
-    if (listData.error) {
-      throw new Error("Ошибка получения списка моделей: " + listData.error.message);
+    // Если клиент явно просит модель через заголовок (мы это добавим в расширение)
+    if (req.headers['x-force-model']) {
+      model = req.headers['x-force-model'];
     }
 
-    // Ищем любую модель, в названии которой есть 'gemini' 
-    // и которая умеет генерировать контент (generateContent)
-    const validModel = listData.models?.find(m => 
-      m.name.toLowerCase().includes('gemini') && 
-      m.supportedGenerationMethods?.includes('generateContent')
-    );
-
-    if (!validModel) {
-      throw new Error("Не найдено ни одной доступной модели Gemini для этого ключа!");
-    }
-
-    // Берем имя найденной модели (например, 'models/gemini-3.0-pro')
-    const modelName = validModel.name; 
-    
-    // --- ШАГ 2: ОТПРАВКА ЗАПРОСА ---
-    const googleUrl = `https://generativelanguage.googleapis.com/v1beta/${modelName}:generateContent?key=${key}`;
-
-    const bodyToSend = typeof req.body === 'object' ? JSON.stringify(req.body) : req.body;
+    const googleUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
 
     const response = await fetch(googleUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: bodyToSend
+      body: JSON.stringify(req.body) // Пересылаем всё как есть: картинки, PDF, системные промпты
     });
 
     const data = await response.json();
-    
-    // Добавляем в ответ инфу, какая модель в итоге ответила (для интереса)
-    if (!data.error) {
-      res.setHeader('X-Model-Used', modelName);
-    }
-
     res.status(response.status).json(data);
 
   } catch (error) {
