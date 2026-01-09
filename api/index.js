@@ -1,36 +1,57 @@
 export default async function handler(req, res) {
-  // 1. CORS заголовки (разрешаем доступ всем)
+  // Настройка заголовков (CORS)
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,POST,PUT,DELETE');
   res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version');
 
-  // Если браузер проверяет доступ
+  // Ответ на проверку браузера
   if (req.method === 'OPTIONS') {
     res.status(200).end();
     return;
   }
 
   try {
-    // 2. Получаем ключ из параметров запроса (?key=...)
     const { key } = req.query;
 
     if (!key) {
-      throw new Error('API Key not found in query params');
+      return res.status(400).json({ error: "Нет API ключа (key) в запросе" });
     }
 
-    // 3. ЖЕСТКО прописываем адрес Gemini 1.5 Pro
+    if (!req.body) {
+      return res.status(400).json({ error: "Тело запроса (body) пустое" });
+    }
+
+    // URL к Gemini 1.5 Pro
     const googleUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${key}`;
 
-    // 4. Отправляем запрос в Google
+    // Подготовка данных. Если Vercel уже распарсил body как объект, превращаем обратно в строку для Google.
+    // Если это строка, отправляем как есть.
+    const payload = typeof req.body === 'object' ? JSON.stringify(req.body) : req.body;
+
+    // Запрос к Google
     const response = await fetch(googleUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(req.body)
+      body: payload
     });
 
-    const data = await response.json();
-    res.status(response.status).json(data);
+    // ВАЖНО: Сначала читаем как текст, чтобы не было ошибки "Unexpected end of JSON"
+    const responseText = await response.text();
+
+    // Пытаемся превратить ответ в JSON
+    try {
+      const data = JSON.parse(responseText);
+      // Возвращаем ответ (даже если там ошибка от Google, она будет в JSON)
+      res.status(response.status).json(data);
+    } catch (parseError) {
+      // Если это не JSON (например, HTML ошибка или пустой ответ), возвращаем текст как есть
+      console.error("Non-JSON response:", responseText);
+      res.status(500).json({ 
+        error: "Google вернул не JSON", 
+        rawResponse: responseText 
+      });
+    }
 
   } catch (error) {
     res.status(500).json({ error: error.message });
