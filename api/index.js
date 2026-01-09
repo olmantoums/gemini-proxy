@@ -1,7 +1,7 @@
 export const config = {
   api: {
     bodyParser: {
-      sizeLimit: '4mb', // Увеличиваем лимит для PDF файлов
+      sizeLimit: '10mb', // Лимит для больших файлов
     },
   },
 };
@@ -9,8 +9,8 @@ export const config = {
 export default async function handler(req, res) {
   // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-force-model');
 
   if (req.method === 'OPTIONS') {
     res.status(200).end();
@@ -21,26 +21,31 @@ export default async function handler(req, res) {
     const { key } = req.query;
     if (!key) return res.status(400).json({ error: "No API Key" });
 
-    // 1. Авто-выбор модели (Предпочитаем Pro для задач с файлами, Flash для скорости)
-    // Но для простоты берем 1.5 Flash, так как Pro часто падает с 404 без привязки карты.
-    // Если у вас есть доступ к Pro - поменяйте на 'gemini-1.5-pro'
-    let model = 'gemini-1.5-flash'; 
+    // === ГЛАВНОЕ ИЗМЕНЕНИЕ ===
+    // Читаем параметр endpoint. Если его нет — по умолчанию идем генерировать текст
+    // Это позволяет боту самому решать: запросить список моделей или сгенерировать текст
+    let endpoint = req.query.endpoint || 'models/gemini-1.5-flash:generateContent';
+    
+    // Собираем URL
+    const googleUrl = `https://generativelanguage.googleapis.com/v1beta/${endpoint}?key=${key}`;
 
-    // Если клиент явно просит модель через заголовок (мы это добавим в расширение)
-    if (req.headers['x-force-model']) {
-      model = req.headers['x-force-model'];
+    const fetchOptions = {
+      method: req.method, // GET для списка, POST для генерации
+      headers: { 'Content-Type': 'application/json' }
+    };
+
+    // Если есть тело запроса (для POST), добавляем его
+    if (req.method !== 'GET' && req.body) {
+      fetchOptions.body = typeof req.body === 'object' ? JSON.stringify(req.body) : req.body;
     }
 
-    const googleUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+    const response = await axios(googleUrl, fetchOptions); // Используем стандартный fetch ниже
+    // (Примечание: в Vercel лучше использовать native fetch)
+    
+    const googleRes = await fetch(googleUrl, fetchOptions);
+    const data = await googleRes.json();
 
-    const response = await fetch(googleUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(req.body) // Пересылаем всё как есть: картинки, PDF, системные промпты
-    });
-
-    const data = await response.json();
-    res.status(response.status).json(data);
+    res.status(googleRes.status).json(data);
 
   } catch (error) {
     res.status(500).json({ error: error.message });
