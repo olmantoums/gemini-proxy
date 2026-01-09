@@ -1,40 +1,32 @@
 export default async function handler(req, res) {
-  // 1. Настройка CORS (чтобы браузер разрешил расширению доступ)
+  // Настройка CORS (разрешаем расширению доступ к серверу)
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
-  );
+  res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version');
 
-  // Если браузер просто проверяет доступ (OPTIONS), отвечаем "ОК"
   if (req.method === 'OPTIONS') {
     res.status(200).end();
     return;
   }
 
   try {
-    // 2. Формируем URL для Google
-    // req.url содержит путь, например /v1beta/models/...
+    // Формируем URL к Google API
+    // Мы берем путь запроса (например /v1beta/models...) и добавляем к домену Google
     const targetUrl = 'https://generativelanguage.googleapis.com' + req.url;
 
-    // 3. Делаем запрос к Google от имени сервера Vercel
-    // Если есть тело запроса (body), передаем его, иначе null
-    const body = req.body ? JSON.stringify(req.body) : null;
+    // Подготовка тела запроса
+    const body = req.method === 'POST' ? JSON.stringify(req.body) : null;
 
-    const googleResponse = await fetch(targetUrl, {
+    // Запрос к Google
+    const response = await fetch(targetUrl, {
       method: req.method,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: req.method !== 'GET' ? body : undefined,
+      headers: { 'Content-Type': 'application/json' },
+      body: body,
     });
 
-    const data = await googleResponse.json();
-
-    // 4. Возвращаем ответ обратно в расширение
-    res.status(googleResponse.status).json(data);
+    const data = await response.json();
+    res.status(response.status).json(data);
 
   } catch (error) {
     res.status(500).json({ error: error.message });
