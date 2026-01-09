@@ -1,28 +1,32 @@
 export default async function handler(req, res) {
-  // Настройка CORS (разрешаем расширению доступ к серверу)
+  // 1. CORS заголовки (разрешаем доступ всем)
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,POST,PUT,DELETE');
   res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version');
 
+  // Если браузер проверяет доступ
   if (req.method === 'OPTIONS') {
     res.status(200).end();
     return;
   }
 
   try {
-    // Формируем URL к Google API
-    // Мы берем путь запроса (например /v1beta/models...) и добавляем к домену Google
-    const targetUrl = 'https://generativelanguage.googleapis.com' + req.url;
+    // 2. Получаем ключ из параметров запроса (?key=...)
+    const { key } = req.query;
 
-    // Подготовка тела запроса
-    const body = req.method === 'POST' ? JSON.stringify(req.body) : null;
+    if (!key) {
+      throw new Error('API Key not found in query params');
+    }
 
-    // Запрос к Google
-    const response = await fetch(targetUrl, {
-      method: req.method,
+    // 3. ЖЕСТКО прописываем адрес Gemini 1.5 Pro
+    const googleUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${key}`;
+
+    // 4. Отправляем запрос в Google
+    const response = await fetch(googleUrl, {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: body,
+      body: JSON.stringify(req.body)
     });
 
     const data = await response.json();
